@@ -2,3 +2,5 @@ tmp
 bin
 build
 .apt_generated
+.classpath
+build.properties

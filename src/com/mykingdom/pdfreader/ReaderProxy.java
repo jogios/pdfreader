@@ -9,18 +9,22 @@
 package com.mykingdom.pdfreader;
 
 import java.io.File;
+import java.lang.ref.WeakReference;
 
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.annotations.Kroll;
 import org.appcelerator.titanium.TiApplication;
 import org.appcelerator.titanium.TiFileProxy;
 import org.appcelerator.titanium.proxy.TiViewProxy;
+import org.appcelerator.titanium.util.TiConvert;
 import org.appcelerator.titanium.view.TiCompositeLayout;
 import org.appcelerator.titanium.view.TiUIView;
 
 import com.joanzapata.pdfview.PDFView;
+import com.joanzapata.pdfview.listener.OnPageChangeListener;
 
 import android.app.Activity;
+import android.os.Message;
 import android.util.AttributeSet;
 import android.util.Log;
 
@@ -31,25 +35,47 @@ public class ReaderProxy extends TiViewProxy {
 	// Standard Debugging variables
 	private static final String TAG = "ReaderProxy";
 
-	private class ReaderView extends TiUIView {
+	private static final int MSG_FIRST_ID = TiViewProxy.MSG_LAST_ID + 1;
+	private static final int MSG_SET_CURRENT_PAGE = MSG_FIRST_ID + 100;
+	private static final int MSG_ENABLE_SWIPE = MSG_FIRST_ID + 101;
+
+	private class ReaderView extends TiUIView implements OnPageChangeListener {
 
 		// Static Properties
 		public static final String PROPERTY_FILE_PATH = "file";
+		public static final String PROPERTY_DEFAULT_PAGE_NUMBER = "defaultPage";
+		public static final String PROPERTY_ENABLE_SWIPE = "enableSwipe";
+		public static final String PROPERTY_CURRENT_PAGE = "currentPage";
+		public static final String PROPERTY_PAGE_COUNT = "pageCount";
+		public static final String EVENT_PAGE_CHANGED = "pagechanged";
 
 		private PDFView pdfView;
 
 		public ReaderView(TiViewProxy proxy) {
+
 			super(proxy);
+
 			TiCompositeLayout view = new TiCompositeLayout(proxy.getActivity());
 			TiApplication appContext = TiApplication.getInstance();
 			AttributeSet as = null;
 			pdfView = new PDFView(appContext, as);
 			view.addView(pdfView);
+
 			setNativeView(view);
 		}
 
 		@Override
 		public void processProperties(KrollDict d) {
+
+			int defaultPageNumber = 1;
+			if (d.containsKey(PROPERTY_DEFAULT_PAGE_NUMBER)) {
+				defaultPageNumber = d.getInt(PROPERTY_DEFAULT_PAGE_NUMBER);
+			}
+
+			boolean enableSwipe = true;
+			if (d.containsKey(PROPERTY_ENABLE_SWIPE)) {
+				enableSwipe = d.getBoolean(PROPERTY_ENABLE_SWIPE);
+			}
 
 			if (d.containsKey(PROPERTY_FILE_PATH)) {
 				try {
@@ -57,7 +83,9 @@ public class ReaderProxy extends TiViewProxy {
 							.get(PROPERTY_FILE_PATH);
 					File file = fileProxy.getBaseFile().getNativeFile();
 					if (file.exists()) {
-						pdfView.fromFile(file).load();
+						pdfView.fromFile(file).defaultPage(defaultPageNumber)
+								.enableSwipe(enableSwipe).onPageChange(this)
+								.load();
 					}
 				} catch (Exception ex) {
 					String err = (ex.getMessage() == null) ? "Something wrong with the file given"
@@ -69,6 +97,31 @@ public class ReaderProxy extends TiViewProxy {
 			super.processProperties(d);
 		}
 
+		@Override
+		public void onPageChanged(int page, int pageCount) {
+			if (getProxy().hasListeners(EVENT_PAGE_CHANGED)) {
+				KrollDict data = new KrollDict();
+				data.put(PROPERTY_CURRENT_PAGE, page);
+				data.put(PROPERTY_PAGE_COUNT, pageCount);
+				getProxy().fireEvent(EVENT_PAGE_CHANGED, data);
+			}
+		}
+
+		public void setCurrentPage(int pageNumber) {
+			pdfView.jumpTo(pageNumber);
+		}
+
+		public int getCurrentPage() {
+			return pdfView.getCurrentPage() + 1;
+		}
+
+		public void enableSwipe(boolean enableSwipe) {
+			pdfView.enableSwipe(enableSwipe);
+		}
+
+		public int getPageCount() {
+			return pdfView.getPageCount();
+		}
 	}
 
 	// Constructor
@@ -78,10 +131,31 @@ public class ReaderProxy extends TiViewProxy {
 
 	@Override
 	public TiUIView createView(Activity activity) {
-		TiUIView view = new ReaderView(this);
+		ReaderView view = new ReaderView(this);
 		view.getLayoutParams().autoFillsHeight = true;
 		view.getLayoutParams().autoFillsWidth = true;
 		return view;
+	}
+
+	public ReaderView getReaderView() {
+		return (ReaderView) getOrCreateView();
+	}
+
+	@Override
+	public boolean handleMessage(Message msg) {
+		switch (msg.what) {
+		case MSG_SET_CURRENT_PAGE: {
+			getReaderView().setCurrentPage((Integer) msg.obj);
+			return true;
+		}
+		case MSG_ENABLE_SWIPE: {
+			getReaderView().enableSwipe((Boolean) msg.obj);
+			return true;
+		}
+		default: {
+			return super.handleMessage(msg);
+		}
+		}
 	}
 
 	// Handle creation options
@@ -92,7 +166,51 @@ public class ReaderProxy extends TiViewProxy {
 
 	// Methods
 	@Kroll.method
-	public void loadPDFFromFile(TiFileProxy file) {
+	public void loadPDFFromFile(TiFileProxy file,
+			@Kroll.argument(optional = true) Object pageNumberObj,
+			@Kroll.argument(optional = true) Object enableSwipeObj) {
+		int defaultPageNumber = 1;
+		if (pageNumberObj != null) {
+			defaultPageNumber = TiConvert.toInt(pageNumberObj);
+		}
+		boolean enableSwipe = true;
+		if (enableSwipeObj != null) {
+			enableSwipe = TiConvert.toBoolean(enableSwipeObj);
+		}
+		setProperty(ReaderView.PROPERTY_DEFAULT_PAGE_NUMBER, defaultPageNumber);
+		setProperty(ReaderView.PROPERTY_ENABLE_SWIPE, enableSwipe);
 		setPropertyAndFire(ReaderView.PROPERTY_FILE_PATH, file);
+	}
+
+	@Kroll.method
+	public void setCurrentPage(int pageNumber) {
+		if (TiApplication.isUIThread()) {
+			getReaderView().setCurrentPage(pageNumber);
+			return;
+		}
+		Message message = getMainHandler().obtainMessage(MSG_SET_CURRENT_PAGE,
+				pageNumber);
+		message.sendToTarget();
+	}
+
+	@Kroll.method
+	public int getCurrentPage() {
+		return getReaderView().getCurrentPage();
+	}
+
+	@Kroll.method
+	public void enableSwipe(boolean enableSwipe) {
+		if (TiApplication.isUIThread()) {
+			getReaderView().enableSwipe(enableSwipe);
+			return;
+		}
+		Message message = getMainHandler().obtainMessage(MSG_ENABLE_SWIPE,
+				enableSwipe);
+		message.sendToTarget();
+	}
+
+	@Kroll.method
+	public int getPageCount() {
+		return getReaderView().getPageCount();
 	}
 }
