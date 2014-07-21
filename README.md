@@ -93,3 +93,10 @@ if (Ti.Platform.name == "android") {
 }
 win.open();
 ```
+
+## Changelog
+
+* v1.1
+  * added optional parameters defaultPageNumber & enableSwipe  to loadPDFFromFile method
+  * new methods setCurrentPage(number), getCurrentPage(number), getPageCount(), enableSwipe(boolen)
+  * new event pagechanged - fired when user swipe between pages
