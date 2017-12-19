@@ -95,6 +95,8 @@ win.open();
 ```
 
 ## Changelog
+* v2.0.0
+  * Compiled for titanium sdk >= 6.0.0
 
 * v1.1
   * added optional parameters defaultPageNumber & enableSwipe  to loadPDFFromFile method
