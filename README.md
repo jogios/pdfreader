@@ -2,7 +2,7 @@
 
 ## Description
 
-This module extends https://github.com/JoanZapata/android-pdfview in titanium. 
+This module extends https://github.com/JoanZapata/android-pdfview in titanium.
 
 ## Usage
 
@@ -95,6 +95,9 @@ win.open();
 ```
 
 ## Changelog
+* v3.0.0
+  * Compiled for titanium sdk >= 7.0.0
+
 * v2.0.0
   * Compiled for titanium sdk >= 6.0.0
 
